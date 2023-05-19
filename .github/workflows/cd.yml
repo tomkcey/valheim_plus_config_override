@@ -18,5 +18,5 @@ jobs:
           cache-dependency-path: app/go.sum
       - run: go build main.go
       - run: ls -la
-      - run: tar -xvf ./main.exe vpc_overrider.tar.gz
+      - run: tar -czvf vpc_overrider.tar.gz main.exe
       - run: ls -la
