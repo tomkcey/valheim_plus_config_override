@@ -1,9 +1,7 @@
 FROM golang:latest as build
 WORKDIR /app
-COPY main.go migrations dbconfig.yml ./
-RUN ["go", "build","main.go"]
-RUN ["go", "install", "github.com/rubenv/sql-migrate/...@latest"]
-RUN ["sql-migrate", "up"]
+COPY main.go ./
+RUN go build main.go
 
 FROM alpine:latest as exec
 WORKDIR /app
