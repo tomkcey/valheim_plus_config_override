@@ -23,7 +23,7 @@ jobs:
           version: latest
           install-only: true
       - run: upx --help
-      - run: upx -fq -o main.exe ./main.exe
+      - run: upx -fq -o main main
       # - uses: go-semantic-release/action@v1
       #   with:
       #     hooks: goreleaser
