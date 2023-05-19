@@ -9,3 +9,7 @@ Just execute the program, enter the absolute path to source file, then to target
 ### How to compile?
 
 If you have Go installed, position yourself at root and then enter `go build main.go` in your terminal. This will generate a `main.exe` file which you can run from the terminal.
+
+### How to use with docker?
+
+Position yourself at root, then run `docker build . -t <name>`, then `docker run -it <name>`.
