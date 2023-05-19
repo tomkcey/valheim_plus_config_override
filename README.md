@@ -4,7 +4,7 @@ For those using the Valheim Plus mod on the game Valheim, sometimes you have a c
 
 ### How?
 
-Just execute the program, enter the absolute path to source file, then to target file (with which you'll override the source file), and it will create a `valheim_plus.cfg` file in your temp directory, which may be different depending on your operating system.
+Just execute the program, enter the absolute path to source file, then to target file (with which you'll override the source file), and it will create a `*.cfg` file in your temp directory, which may be different depending on your operating system. The file's name is a time (Unix) number.
 
 ### How to compile?
 
