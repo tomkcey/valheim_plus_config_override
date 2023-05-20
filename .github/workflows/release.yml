@@ -45,6 +45,7 @@ jobs:
           echo "GOARCH=$GOARCH" >> $GITHUB_ENV
       - name: mod
         run: |
+          echo ${{ github.workspace }} && \
           go mod init ${{ github.workspace }}
       - name: build
         run: |
