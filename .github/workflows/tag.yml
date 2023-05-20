@@ -1,9 +1,10 @@
 name: tag
 
 on:
-  push
-  # branches:
-  #   - master
+  push:
+    branches:
+      - master
+
 jobs:
   Patch:
     runs-on: ubuntu-latest
