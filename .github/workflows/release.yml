@@ -17,12 +17,9 @@ jobs:
       matrix:
         goosarch:
           - "darwin/amd64"
-          - "js/wasm"
           - "linux/amd64"
-          - "linux/arm"
-          - "windows/386"
           - "windows/amd64"
-          - "windows/arm"
+          - "js/wasm"
     steps:
       - name: checkout
         uses: actions/checkout@v3
