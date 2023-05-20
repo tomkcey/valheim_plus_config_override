@@ -1,3 +1,6 @@
+![release](https://github.com/tomkcey/valheim_plus_config_override/actions/workflows/release.yml/badge.svg)
+![tag](https://github.com/tomkcey/valheim_plus_config_override/actions/workflows/tag.yml/badge.svg)
+
 ### Why?
 
 For those using the Valheim Plus mod on the game Valheim, sometimes you have a couple configurations you'd like to change but you might have to dig through the file to find each key/value pair. How tiring is that?
