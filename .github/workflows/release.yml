@@ -17,12 +17,9 @@ jobs:
       matrix:
         goosarch:
           - "darwin/amd64"
-          - "darwin/arm64"
           - "js/wasm"
-          - "linux/386"
           - "linux/amd64"
           - "linux/arm"
-          - "linux/arm64"
           - "windows/386"
           - "windows/amd64"
           - "windows/arm"
@@ -45,8 +42,7 @@ jobs:
           echo "GOARCH=$GOARCH" >> $GITHUB_ENV
       - name: mod
         run: |
-          echo ${{ github.workspace }} && \
-          go mod init ${{ github.workspace }}
+          go mod init ${{env.BINARY_NAME}}
       - name: build
         run: |
           go build -o "$BINARY_NAME" -v
