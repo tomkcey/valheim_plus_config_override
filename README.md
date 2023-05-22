@@ -5,6 +5,7 @@
 - [ ] Sort produced config sections
 - [ ] Produce tests
 - [ ] Improve error handling
+- [ ] Check that input file is a \*.cfg
 
 ### Why?
 
