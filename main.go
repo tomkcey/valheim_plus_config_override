@@ -17,26 +17,53 @@ func check(e error) {
 	}
 }
 
+type Pair = [2]string
+type MapSectionToPairs = map[string][]Pair
+
+type InputHandler struct {
+	r *bufio.Reader
+}
+
+type FileStore struct {
+	Source string
+	Target string
+}
+
+type MappedFileStore struct {
+	Source *MapSectionToPairs
+	Target *MapSectionToPairs
+}
+type SectionToPair struct {
+	key   string
+	value *MapSectionToPairs
+}
+
+type SectionMap struct {
+	section string
+	source  []Pair
+	target  []Pair
+}
+
+type FilteredSectionMap struct {
+	section string
+	pairs   []Pair
+}
+
 func main() {
 	store := Prepare()
 	if store == nil {
-		fmt.Println("A problem occured. Somehow the source and target files were provided but not stored.")
-		os.Exit(20)
-	}
-	sm := *PreProcess(store.Source)
-	if sm == nil {
-		fmt.Println("Given source file was somehow detected but nothing came of it.")
-		os.Exit(20)
-	}
-	tm := *PreProcess(store.Target)
-	if tm == nil {
-		fmt.Println("Given target file was somehow detected but nothing came of it.")
+		fmt.Println("A problem occured.")
 		os.Exit(20)
 	}
 
-	m := Process(sm, tm)
+	now := time.Now()
 
-	PostProcess(m)
+	ms := PreProcess(store)
+	m := Process(ms)
+
+	PostProcess(*m)
+
+	fmt.Println(time.Since(now))
 }
 
 func pullSection(l string) *string {
@@ -57,23 +84,23 @@ func pullComment(l string) *string {
 	return nil
 }
 
-func pullKeyValue(l string) *[2]string {
+func pullKeyValue(l string) *Pair {
 	rgxp := regexp.MustCompile(`[=]+`)
 	x := rgxp.Split(l, -1)
 	if len(x) == 2 {
 		k := strings.TrimSpace(x[0])
 		v := strings.TrimSpace(x[1])
-		return &[2]string{k, v}
+		return &Pair{k, v}
 	}
 	return nil
 }
 
-func PreProcess(path string) *map[string][][2]string {
+func mapFileToIterable(path string) *MapSectionToPairs {
 	f, err := os.Open(path)
 	check(err)
 	r := bufio.NewReader(f)
 
-	m := make(map[string]([][2]string))
+	m := make(map[string]([]Pair))
 
 	cs := ""
 	last := false
@@ -104,30 +131,108 @@ func PreProcess(path string) *map[string][][2]string {
 	return &m
 }
 
-func Process(sm map[string][][2]string, tm map[string][][2]string) map[string][][2]string {
-	m := make(map[string][][2]string)
-	for k := range sm {
-		smKvs := sm[k]
-		tmKvs := tm[k]
-		tmpKvM := make(map[string]string)
-		for i := 0; i < len(smKvs); i++ {
-			t := smKvs[i]
-			tmpKvM[t[0]] = t[1]
-		}
-		for j := 0; j < len(tmKvs); j++ {
-			t := tmKvs[j]
-			tmpKvM[t[0]] = t[1]
-		}
-		arr := make([][2]string, 1)
-		for key := range tmpKvM {
-			arr = append(arr, [2]string{key, tmpKvM[key]})
-		}
-		m[k] = arr
+func assignIterableToKey(k string, p string, c chan SectionToPair) {
+	r := mapFileToIterable(p)
+	if r == nil {
+		fmt.Println("A problem occured.")
+		os.Exit(20)
 	}
-	return m
+	// question, would the line below be passed by value or reference?
+	c <- SectionToPair{key: k, value: r}
 }
 
-func PostProcess(m map[string][][2]string) {
+func PreProcess(s *FileStore) MappedFileStore {
+	c := make(chan SectionToPair)
+
+	for _, p := range []Pair{{"source", s.Source}, {"target", s.Target}} {
+		go assignIterableToKey(p[0], p[1], c)
+	}
+
+	ms := MappedFileStore{}
+
+	for ms.Source == nil || ms.Target == nil {
+		r := <-c
+
+		if r.key == "source" {
+			ms.Source = r.value
+		} else if r.key == "target" {
+			ms.Target = r.value
+		}
+	}
+
+	return ms
+}
+
+func mapSections(ms MappedFileStore) []SectionMap {
+	r := make([]SectionMap, 0, 1)
+	for k, v := range *ms.Source {
+		sm := SectionMap{section: k, source: v}
+		t := *ms.Target
+		sm.target = t[k]
+		r = append(r, sm)
+	}
+	return r
+}
+
+func overrideSection(sm SectionMap) FilteredSectionMap {
+	if sm.target == nil || len(sm.target) == 0 {
+		return FilteredSectionMap{section: sm.section, pairs: sm.source}
+	}
+
+	r := make([]Pair, 0, 1)
+	for _, pairA := range sm.source {
+		f := false
+		for _, pairB := range sm.target {
+			if pairB[0] == pairA[0] {
+				f = true
+				r = append(r, Pair{pairB[0], pairB[1]})
+			}
+		}
+		if f == false {
+			r = append(r, Pair{pairA[0], pairA[1]})
+		}
+	}
+
+	// adding new ones that weren't there in source
+	for _, pairA := range sm.target {
+		f := false
+		for _, pairB := range sm.source {
+			if pairA[0] == pairB[0] {
+				f = true
+			}
+		}
+		if f == false {
+			r = append(r, Pair{pairA[0], pairA[1]})
+		}
+	}
+
+	return FilteredSectionMap{section: sm.section, pairs: r}
+}
+
+func overrideSections(sms []SectionMap) *MapSectionToPairs {
+	r := make(MapSectionToPairs)
+	c := make(chan FilteredSectionMap)
+
+	for _, sm := range sms {
+		go func(smap SectionMap) {
+			c <- overrideSection(smap)
+		}(sm)
+	}
+
+	for i := 0; i < len(sms); i++ {
+		o := <-c
+		r[o.section] = o.pairs
+	}
+
+	return &r
+}
+
+func Process(ms MappedFileStore) *MapSectionToPairs {
+	sms := mapSections(ms)
+	return overrideSections(sms)
+}
+
+func PostProcess(m MapSectionToPairs) {
 	t := strconv.FormatInt(time.Now().Unix(), 10)
 	fn := strings.Join([]string{t, ".cfg"}, "")
 	v := strings.Join([]string{os.TempDir(), fn}, string(os.PathSeparator))
@@ -136,12 +241,12 @@ func PostProcess(m map[string][][2]string) {
 
 	w := bufio.NewWriter(f)
 
-	for k := range m {
+	for k, v := range m {
 		s := strings.Join([]string{"[", k, "]", "\n"}, "")
 		w.WriteString(s)
 		w.WriteString("\n")
-		for i := 0; i < len(m[k]); i++ {
-			x := m[k][i]
+		for i := 0; i < len(v); i++ {
+			x := v[i]
 			n := make([]string, 0)
 			for j := 0; j < len(x); j++ {
 				fmtstr := strings.TrimSpace(x[j])
@@ -153,7 +258,7 @@ func PostProcess(m map[string][][2]string) {
 				kv := strings.Join([]string{n[0], "=", n[1], "\n"}, "")
 				w.WriteString(kv)
 			}
-			if i == len(m[k])-1 {
+			if i == len(v)-1 {
 				w.WriteString("\n")
 			}
 
@@ -167,18 +272,6 @@ func PostProcess(m map[string][][2]string) {
 	fmt.Println("Wrote new file at", v)
 }
 
-type InputHandler struct {
-	r *bufio.Reader
-}
-
-func initStdInReader() InputHandler {
-	return InputHandler{r: bufio.NewReader(os.Stdin)}
-}
-
-func (i InputHandler) prompt() {
-	fmt.Print("Input file path: ")
-}
-
 func (i InputHandler) read() string {
 	text, err := i.r.ReadString('\n')
 	check(err)
@@ -190,7 +283,7 @@ func (i InputHandler) read() string {
 func (i InputHandler) eval(path string) {
 	info, err := os.Stat(path)
 	if err != nil {
-		fmt.Println("Error: Couldn't find the file, make sure to copy the exact path (absolute path) to file")
+		fmt.Println("No such file at provided path.")
 		fmt.Println("Exiting...")
 		os.Exit(20)
 	}
@@ -198,19 +291,14 @@ func (i InputHandler) eval(path string) {
 }
 
 func (i InputHandler) source() string {
-	i.prompt()
+	fmt.Print("Input file path: ")
 	path := i.read()
 	i.eval(path)
 	return path
 }
 
-type FileStore struct {
-	Target string
-	Source string
-}
-
 func Prepare() *FileStore {
-	i := initStdInReader()
+	i := InputHandler{r: bufio.NewReader(os.Stdin)}
 	fmt.Println("Taking input for source file (file to be overriden)")
 	source := i.source()
 	fmt.Println("Taking input for target file (file to override with)")
