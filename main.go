@@ -17,26 +17,71 @@ func check(e error) {
 	}
 }
 
+type InputHandler struct {
+	r *bufio.Reader
+}
+
+type FileStore struct {
+	Target string
+	Source string
+}
+
+type MappedFileStore struct {
+	Source *map[string][][2]string
+	Target *map[string][][2]string
+}
+type Pair struct {
+	key   string
+	value *map[string][][2]string
+}
+
+func assignIterableToKey(k string, p string, c chan Pair) {
+	r := mapFileToIterable(p)
+	if r == nil {
+		fmt.Println("A problem occured.")
+		os.Exit(20)
+	}
+	// question, would the line below be passed by value or reference?
+	c <- Pair{key: k, value: r}
+}
+
+func PreProcess(s *FileStore) MappedFileStore {
+	c := make(chan Pair)
+
+	for _, p := range [][2]string{{"source", s.Source}, {"target", s.Target}} {
+		go assignIterableToKey(p[0], p[1], c)
+	}
+
+	ms := MappedFileStore{}
+
+	for ms.Source == nil || ms.Target == nil {
+		r := <-c
+
+		if r.key == "source" {
+			ms.Source = r.value
+		} else if r.key == "target" {
+			ms.Target = r.value
+		}
+	}
+
+	return ms
+}
+
 func main() {
 	store := Prepare()
 	if store == nil {
-		fmt.Println("A problem occured. Somehow the source and target files were provided but not stored.")
-		os.Exit(20)
-	}
-	sm := *PreProcess(store.Source)
-	if sm == nil {
-		fmt.Println("Given source file was somehow detected but nothing came of it.")
-		os.Exit(20)
-	}
-	tm := *PreProcess(store.Target)
-	if tm == nil {
-		fmt.Println("Given target file was somehow detected but nothing came of it.")
+		fmt.Println("A problem occured.")
 		os.Exit(20)
 	}
 
-	m := Process(sm, tm)
+	now := time.Now()
 
-	PostProcess(m)
+	ms := PreProcess(store)
+	m := Process(ms)
+
+	PostProcess(*m)
+
+	fmt.Println(time.Since(now))
 }
 
 func pullSection(l string) *string {
@@ -68,7 +113,7 @@ func pullKeyValue(l string) *[2]string {
 	return nil
 }
 
-func PreProcess(path string) *map[string][][2]string {
+func mapFileToIterable(path string) *map[string][][2]string {
 	f, err := os.Open(path)
 	check(err)
 	r := bufio.NewReader(f)
@@ -104,27 +149,84 @@ func PreProcess(path string) *map[string][][2]string {
 	return &m
 }
 
-func Process(sm map[string][][2]string, tm map[string][][2]string) map[string][][2]string {
-	m := make(map[string][][2]string)
-	for k := range sm {
-		smKvs := sm[k]
-		tmKvs := tm[k]
-		tmpKvM := make(map[string]string)
-		for i := 0; i < len(smKvs); i++ {
-			t := smKvs[i]
-			tmpKvM[t[0]] = t[1]
-		}
-		for j := 0; j < len(tmKvs); j++ {
-			t := tmKvs[j]
-			tmpKvM[t[0]] = t[1]
-		}
-		arr := make([][2]string, 1)
-		for key := range tmpKvM {
-			arr = append(arr, [2]string{key, tmpKvM[key]})
-		}
-		m[k] = arr
+type SectionMap struct {
+	section string
+	source  [][2]string
+	target  [][2]string
+}
+
+func mapSections(ms MappedFileStore) []SectionMap {
+	r := make([]SectionMap, 0, 1)
+	for k, v := range *ms.Source {
+		sm := SectionMap{section: k, source: v}
+		t := *ms.Target
+		sm.target = t[k]
+		r = append(r, sm)
 	}
-	return m
+	return r
+}
+
+type FilteredSectionMap struct {
+	section string
+	pairs   [][2]string
+}
+
+func overrideSection(sm SectionMap) FilteredSectionMap {
+	if sm.target == nil || len(sm.target) == 0 {
+		return FilteredSectionMap{section: sm.section, pairs: sm.source}
+	}
+
+	r := make([][2]string, 0, 1)
+	for _, pairA := range sm.source {
+		f := false
+		for _, pairB := range sm.target {
+			if pairB[0] == pairA[0] {
+				f = true
+				r = append(r, [2]string{pairB[0], pairB[1]})
+			}
+		}
+		if f == false {
+			r = append(r, [2]string{pairA[0], pairA[1]})
+		}
+	}
+
+	// adding new ones that weren't there in source
+	for _, pairA := range sm.target {
+		f := false
+		for _, pairB := range sm.source {
+			if pairA[0] == pairB[0] {
+				f = true
+			}
+		}
+		if f == false {
+			r = append(r, [2]string{pairA[0], pairA[1]})
+		}
+	}
+
+	return FilteredSectionMap{section: sm.section, pairs: r}
+}
+
+func overrideSections(sms []SectionMap) *map[string][][2]string {
+	r := make(map[string][][2]string)
+	c := make(chan FilteredSectionMap)
+
+	for _, sm := range sms {
+		go func(smap SectionMap) {
+			c <- overrideSection(smap)
+		}(sm)
+	}
+
+	for i := 0; i < len(sms); i++ {
+		o := <-c
+		r[o.section] = o.pairs
+	}
+
+	return &r
+}
+
+func Process(ms MappedFileStore) *map[string][][2]string {
+	sms := mapSections(ms)
+	return overrideSections(sms)
 }
 
 func PostProcess(m map[string][][2]string) {
@@ -167,10 +269,6 @@ func PostProcess(m map[string][][2]string) {
 	fmt.Println("Wrote new file at", v)
 }
 
-type InputHandler struct {
-	r *bufio.Reader
-}
-
 func initStdInReader() InputHandler {
 	return InputHandler{r: bufio.NewReader(os.Stdin)}
 }
@@ -190,7 +288,7 @@ func (i InputHandler) read() string {
 func (i InputHandler) eval(path string) {
 	info, err := os.Stat(path)
 	if err != nil {
-		fmt.Println("Error: Couldn't find the file, make sure to copy the exact path (absolute path) to file")
+		fmt.Println("A problem occured.")
 		fmt.Println("Exiting...")
 		os.Exit(20)
 	}
@@ -202,11 +300,6 @@ func (i InputHandler) source() string {
 	path := i.read()
 	i.eval(path)
 	return path
-}
-
-type FileStore struct {
-	Target string
-	Source string
 }
 
 func Prepare() *FileStore {
